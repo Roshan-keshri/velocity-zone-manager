@@ -16,58 +16,61 @@ const client = axios.create({
 
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
-
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
+const extractApiError = (error: unknown): string => {
+  if (axios.isAxiosError(error)) {
+    const msg =
+      (error.response?.data as any)?.error ||
+      (error.response?.data as any)?.message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return "Something went wrong.";
+};
+
 export const api = {
   // ---------------- AUTH ----------------
-
   async signup(email: string, password: string) {
-    return client.post("/auth/signup", {
-      email,
-      password,
-    });
+    try {
+      return await client.post("/auth/signup", { email, password });
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
-  async login(
-    email: string,
-    password: string
-  ): Promise<LoginResponse> {
-    const { data } = await client.post<LoginResponse>("/auth/login", {
-      email,
-      password,
-    });
-
-    return data;
+  async login(email: string, password: string): Promise<LoginResponse> {
+    try {
+      const { data } = await client.post<LoginResponse>("/auth/login", {
+        email,
+        password,
+      });
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   // ---------------- PROPERTY ----------------
-
-  async getProperties(
-    search?: string,
-    type?: string
-  ): Promise<Property[]> {
-    const { data } = await client.get<Property[]>("/properties", {
-      params: {
-        q: search || undefined,
-        type: type || undefined,
-      },
-    });
-
-    return data;
+  async getProperties(search?: string, type?: string): Promise<Property[]> {
+    try {
+      const { data } = await client.get<Property[]>("/properties", {
+        params: { q: search || undefined, type: type || undefined },
+      });
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   async getProperty(id: number): Promise<Property> {
-    const { data } = await client.get<Property>(
-      `/properties/${id}`
-    );
-
-    return data;
+    try {
+      const { data } = await client.get<Property>(`/properties/${id}`);
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   async createProperty(payload: {
@@ -76,12 +79,12 @@ export const api = {
     total_acreage: number;
     notes?: string;
   }): Promise<Property> {
-    const { data } = await client.post<Property>(
-      "/properties",
-      payload
-    );
-
-    return data;
+    try {
+      const { data } = await client.post<Property>("/properties", payload);
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   async updateProperty(
@@ -93,26 +96,30 @@ export const api = {
       notes: string;
     }>
   ): Promise<Property> {
-    const { data } = await client.put<Property>(
-      `/properties/${id}`,
-      payload
-    );
-
-    return data;
+    try {
+      const { data } = await client.put<Property>(`/properties/${id}`, payload);
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   async deleteProperty(id: number) {
-    await client.delete(`/properties/${id}`);
+    try {
+      await client.delete(`/properties/${id}`);
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   // ---------------- ZONES ----------------
-
   async getZones(propertyId: number): Promise<Zone[]> {
-    const { data } = await client.get<Zone[]>(
-      `/properties/${propertyId}/zones`
-    );
-
-    return data;
+    try {
+      const { data } = await client.get<Zone[]>(`/properties/${propertyId}/zones`);
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   async createZone(
@@ -125,12 +132,15 @@ export const api = {
       geometry: any;
     }
   ): Promise<Zone> {
-    const { data } = await client.post<Zone>(
-      `/properties/${propertyId}/zones`,
-      payload
-    );
-
-    return data;
+    try {
+      const { data } = await client.post<Zone>(
+        `/properties/${propertyId}/zones`,
+        payload
+      );
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   async updateZone(
@@ -144,59 +154,62 @@ export const api = {
       geometry: any;
     }>
   ): Promise<Zone> {
-    const { data } = await client.put<Zone>(
-      `/properties/${propertyId}/zones/${zoneId}`,
-      payload
-    );
-
-    return data;
+    try {
+      const { data } = await client.put<Zone>(
+        `/properties/${propertyId}/zones/${zoneId}`,
+        payload
+      );
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
-  async deleteZone(
-    propertyId: number,
-    zoneId: number
-  ) {
-    await client.delete(
-      `/properties/${propertyId}/zones/${zoneId}`
-    );
+  async deleteZone(propertyId: number, zoneId: number) {
+    try {
+      await client.delete(`/properties/${propertyId}/zones/${zoneId}`);
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   // ---------------- SUMMARY ----------------
-
-  async getZoneSummary(
-    propertyId: number
-  ): Promise<ZoneSummary> {
-    const { data } = await client.get<ZoneSummary>(
-      `/properties/${propertyId}/zones/summary`
-    );
-
-    return data;
+  async getZoneSummary(propertyId: number): Promise<ZoneSummary> {
+    try {
+      const { data } = await client.get<ZoneSummary>(
+        `/properties/${propertyId}/zones/summary`
+      );
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   // ---------------- EXPORT ----------------
-
-  async exportZones(
-    propertyId: number
-  ): Promise<GeoJSONFeatureCollection> {
-    const { data } =
-      await client.get<GeoJSONFeatureCollection>(
+  async exportZones(propertyId: number): Promise<GeoJSONFeatureCollection> {
+    try {
+      const { data } = await client.get<GeoJSONFeatureCollection>(
         `/properties/${propertyId}/zones/export`
       );
-
-    return data;
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 
   // ---------------- IMPORT ----------------
-
   async importZones(
     propertyId: number,
     geojson: GeoJSONFeatureCollection
   ): Promise<Zone[]> {
-    const { data } = await client.post<Zone[]>(
-      `/properties/${propertyId}/zones/import`,
-      geojson
-    );
-
-    return data;
+    try {
+      const { data } = await client.post<Zone[]>(
+        `/properties/${propertyId}/zones/import`,
+        geojson
+      );
+      return data;
+    } catch (error) {
+      throw new Error(extractApiError(error));
+    }
   },
 };

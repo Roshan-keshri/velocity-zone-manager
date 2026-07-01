@@ -11,6 +11,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U velocity_user -d velocity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   backend:
     build: ./backend
@@ -23,7 +28,9 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    command: sh -c "python seed.py && python app.py"
     volumes:
       - ./backend:/app
 
@@ -37,5 +44,6 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+
 volumes:
   postgres_data:

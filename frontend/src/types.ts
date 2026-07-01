@@ -14,9 +14,7 @@ export type ZoneType =
   | "Perimeter"
   | "Exclusion";
 
-export type ZoneStatus =
-  | "Active"
-  | "Inactive";
+export type ZoneStatus = "Active" | "Inactive";
 
 export interface Property {
   id: number;
@@ -33,9 +31,7 @@ export interface Zone {
   zone_type: ZoneType;
   mower_count: number;
   status: ZoneStatus;
-
   geometry: GeoJSON.Polygon;
-
   acreage: number;
   understaffed: boolean;
 }
@@ -47,7 +43,17 @@ export interface ZoneSummary {
   understaffed_zones: number;
 }
 
+export interface ZoneGeoJSONProperties {
+  id?: number;
+  name?: string;
+  zone_type?: ZoneType;
+  mower_count?: number;
+  status?: ZoneStatus;
+  acreage?: number;
+  understaffed?: boolean;
+}
+
 export interface GeoJSONFeatureCollection {
   type: "FeatureCollection";
-  features: GeoJSON.Feature[];
+  features: GeoJSON.Feature<GeoJSON.Polygon, ZoneGeoJSONProperties>[];
 }

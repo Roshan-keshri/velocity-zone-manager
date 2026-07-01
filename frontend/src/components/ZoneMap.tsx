@@ -13,52 +13,56 @@ import GeoJSON from "ol/format/GeoJSON.js";
 import { Fill, Stroke, Style, Text } from "ol/style.js";
 import { fromLonLat } from "ol/proj.js";
 import { click } from "ol/events/condition.js";
-import { Feature } from "ol";
 import Polygon from "ol/geom/Polygon.js";
-import { Zone } from "../types";
+import { Zone, ZoneStatus, ZoneType } from "../types";
 
 type ZoneMapProps = {
   zones: Zone[];
   onCreateZone: (payload: {
     name: string;
-    geometry: any;
-    zone_type: string;
+    geometry: GeoJSON.Polygon;
+    zone_type: ZoneType;
     mower_count: number;
-    status: string;
+    status: ZoneStatus;
   }) => Promise<void>;
   onUpdateZone: (
     zoneId: number,
     payload: Partial<{
       name: string;
-      geometry: any;
-      zone_type: string;
+      geometry: GeoJSON.Polygon;
+      zone_type: ZoneType;
       mower_count: number;
-      status: string;
+      status: ZoneStatus;
     }>
   ) => Promise<void>;
   onDeleteZone: (zoneId: number) => Promise<void>;
 };
 
-const zoneTypeColor: Record<string, string> = {
+const geojsonFormat = new GeoJSON();
+
+const zoneTypeColor: Record<ZoneType, string> = {
   Fairway: "#22c55e",
   Rough: "#eab308",
   Perimeter: "#3b82f6",
-  Exclusion: "#ef4444"
+  Exclusion: "#ef4444",
 };
 
-export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZone }: ZoneMapProps) {
+export default function ZoneMap({
+  zones,
+  onCreateZone,
+  onUpdateZone,
+  onDeleteZone,
+}: ZoneMapProps) {
   const mapEl = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const vectorSourceRef = useRef<VectorSource>(new VectorSource());
   const drawRef = useRef<Draw | null>(null);
-  const modifyRef = useRef<Modify | null>(null);
-  const selectRef = useRef<Select | null>(null);
 
   const [selectedZoneId, setSelectedZoneId] = useState<number | null>(null);
   const [zoneName, setZoneName] = useState("");
   const [mowerCount, setMowerCount] = useState(1);
-  const [zoneType, setZoneType] = useState<string>("Fairway");
-  const [status, setStatus] = useState<string>("Active");
+  const [zoneType, setZoneType] = useState<ZoneType>("Fairway");
+  const [status, setStatus] = useState<ZoneStatus>("Active");
   const [isDrawing, setIsDrawing] = useState(false);
 
   const selectedZone = useMemo(
@@ -67,18 +71,25 @@ export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZon
   );
 
   const zoneStyle = (feature: any) => {
-    const typeValue = String(feature.get("zone_type") || "Fairway");
+    const typeValue = (feature.get("zone_type") || "Fairway") as ZoneType;
+    const isUnderstaffed = Boolean(feature.get("understaffed"));
     const color = zoneTypeColor[typeValue] || zoneTypeColor.Fairway;
     const name = String(feature.get("name") || "Zone");
+    const label = isUnderstaffed ? `⚠ ${name}` : name;
 
     return new Style({
-      stroke: new Stroke({ color, width: 2 }),
-      fill: new Fill({ color: `${color}33` }),
+      stroke: new Stroke({
+        color: isUnderstaffed ? "#dc2626" : color,
+        width: isUnderstaffed ? 3 : 2,
+      }),
+      fill: new Fill({
+        color: isUnderstaffed ? "rgba(220,38,38,0.28)" : `${color}33`,
+      }),
       text: new Text({
-        text: name,
+        text: label,
         fill: new Fill({ color: "#0f172a" }),
-        stroke: new Stroke({ color: "#ffffff", width: 3 })
-      })
+        stroke: new Stroke({ color: "#ffffff", width: 3 }),
+      }),
     });
   };
 
@@ -88,35 +99,38 @@ export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZon
     const baseLayer = new TileLayer({ source: new OSM() });
     const vectorLayer = new VectorLayer({
       source: vectorSourceRef.current,
-      style: zoneStyle
+      style: zoneStyle,
     });
 
     const map = new Map({
       target: mapEl.current,
       layers: [baseLayer, vectorLayer],
       view: new View({
-        center: fromLonLat([77.5946, 12.9716]),
-        zoom: 11
-      })
+        // Default India center if no zones
+        center: fromLonLat([78.9629, 20.5937]),
+        zoom: 5,
+      }),
     });
 
     const modify = new Modify({ source: vectorSourceRef.current });
     map.addInteraction(modify);
-    modifyRef.current = modify;
 
     modify.on("modifyend", async (event) => {
       const feature = event.features.item(0);
       const zoneId = Number(feature.get("zoneId"));
       const geometry = feature.getGeometry() as Polygon;
-      const coords = geometry.getCoordinates();
-      await onUpdateZone(zoneId, {
-        geometry: { type: "Polygon", coordinates: coords as number[][][] }
-      });
+
+      // write geometry in EPSG:4326 for backend
+      const geo = geojsonFormat.writeGeometryObject(geometry, {
+        dataProjection: "EPSG:4326",
+        featureProjection: "EPSG:3857",
+      }) as GeoJSON.Polygon;
+
+      await onUpdateZone(zoneId, { geometry: geo });
     });
 
     const select = new Select({ condition: click });
     map.addInteraction(select);
-    selectRef.current = select;
 
     select.on("select", (event) => {
       const feature = event.selected[0];
@@ -141,20 +155,40 @@ export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZon
     source.clear();
 
     zones.forEach((zone) => {
-      const feature = new GeoJSON().readFeature({
-        type: "Feature",
-        geometry: zone.geometry,
-        properties: {
-          zoneId: zone.id,
-          name: zone.name,
-          zone_type: zone.zone_type
+      const feature = geojsonFormat.readFeature(
+        {
+          type: "Feature",
+          geometry: zone.geometry,
+          properties: {
+            zoneId: zone.id,
+            name: zone.name,
+            zone_type: zone.zone_type,
+            understaffed: zone.understaffed,
+          },
+        },
+        {
+          dataProjection: "EPSG:4326",
+          featureProjection: "EPSG:3857",
         }
-      });
-      feature.set("zoneId", zone.id);
-      feature.set("name", zone.name);
-      feature.set("zone_type", zone.zone_type);
+      );
       source.addFeature(feature);
     });
+
+    // Required: zoom to extent on load when zones exist, else India default
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (zones.length > 0 && source.getFeatures().length > 0) {
+      const extent = source.getExtent();
+      map.getView().fit(extent, {
+        padding: [40, 40, 40, 40],
+        maxZoom: 17,
+        duration: 300,
+      });
+    } else {
+      map.getView().setCenter(fromLonLat([78.9629, 20.5937]));
+      map.getView().setZoom(5);
+    }
   }, [zones]);
 
   useEffect(() => {
@@ -167,9 +201,10 @@ export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZon
 
   const startDraw = () => {
     if (!mapRef.current || drawRef.current) return;
+
     const draw = new Draw({
       source: vectorSourceRef.current,
-      type: "Polygon"
+      type: "Polygon",
     });
     drawRef.current = draw;
     mapRef.current.addInteraction(draw);
@@ -177,21 +212,35 @@ export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZon
 
     draw.on("drawend", async (event) => {
       const geometry = event.feature.getGeometry() as Polygon;
-      const coords = geometry.getCoordinates();
       mapRef.current?.removeInteraction(draw);
       drawRef.current = null;
       setIsDrawing(false);
 
-      const name = window.prompt("Zone name?")?.trim() || `Zone ${zones.length + 1}`;
-      const mowers = Number(window.prompt("Mower count?", "1") || "1");
-      const typeStr = (window.prompt("Zone Type: Fairway | Rough | Perimeter | Exclusion", "Fairway") || "Fairway");
+      const nameInput = window.prompt("Zone name?", `Zone ${zones.length + 1}`) || "";
+      const mowerInput = window.prompt("Mower count?", "1") || "1";
+      const typeInput = (window.prompt(
+        "Zone Type: Fairway | Rough | Perimeter | Exclusion",
+        "Fairway"
+      ) || "Fairway") as ZoneType;
+      const statusInput = (window.prompt("Status: Active | Inactive", "Active") || "Active") as ZoneStatus;
+
+      const geo = geojsonFormat.writeGeometryObject(geometry, {
+        dataProjection: "EPSG:4326",
+        featureProjection: "EPSG:3857",
+      }) as GeoJSON.Polygon;
+
+      const validType: ZoneType = ["Fairway", "Rough", "Perimeter", "Exclusion"].includes(typeInput)
+        ? typeInput
+        : "Fairway";
+      const validStatus: ZoneStatus = statusInput === "Inactive" ? "Inactive" : "Active";
+      const mowers = Number(mowerInput);
 
       await onCreateZone({
-        name,
-        zone_type: ["Fairway", "Rough", "Perimeter", "Exclusion"].includes(typeStr) ? typeStr : "Fairway",
-        mower_count: Number.isFinite(mowers) && mowers > 0 ? mowers : 1,
-        status: "Active",
-        geometry: { type: "Polygon", coordinates: coords as number[][][] }
+        name: nameInput.trim() || `Zone ${zones.length + 1}`,
+        zone_type: validType,
+        mower_count: Number.isFinite(mowers) ? mowers : 1, // backend enforces >=1 with exact message
+        status: validStatus,
+        geometry: geo,
       });
     });
   };
@@ -209,7 +258,7 @@ export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZon
       name: zoneName.trim() || selectedZone.name,
       mower_count: mowerCount,
       zone_type: zoneType,
-      status
+      status,
     });
   };
 
@@ -268,7 +317,7 @@ export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZon
               <label className="mb-1 block text-sm font-medium">Zone Type</label>
               <select
                 value={zoneType}
-                onChange={(e) => setZoneType(e.target.value)}
+                onChange={(e) => setZoneType(e.target.value as ZoneType)}
                 className="w-full rounded border border-slate-300 px-3 py-2"
               >
                 <option value="Fairway">Fairway</option>
@@ -282,7 +331,7 @@ export default function ZoneMap({ zones, onCreateZone, onUpdateZone, onDeleteZon
               <label className="mb-1 block text-sm font-medium">Status</label>
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => setStatus(e.target.value as ZoneStatus)}
                 className="w-full rounded border border-slate-300 px-3 py-2"
               >
                 <option value="Active">Active</option>
