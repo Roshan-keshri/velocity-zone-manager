@@ -1,0 +1,15 @@
+node_modules/
+frontend/node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+
+#till now haven't made any env file but it's a good practice to ignore them in case they are created in the future. 
+# Environment files:
+.env
+.env.local
+.env.production
+
+# IDE files:
+.vscode/
+.idea/

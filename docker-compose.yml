@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: vzm_postgres
+    environment:
+      POSTGRES_DB: velocity
+      POSTGRES_USER: velocity_user
+      POSTGRES_PASSWORD: velocity_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  backend:
+    build: ./backend
+    container_name: vzm_backend
+    environment:
+      FLASK_ENV: development
+      SECRET_KEY: supersecret
+      JWT_SECRET_KEY: jwt-supersecret
+      DATABASE_URL: postgresql://velocity_user:velocity_pass@postgres:5432/velocity
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    container_name: vzm_frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+volumes:
+  postgres_data:
